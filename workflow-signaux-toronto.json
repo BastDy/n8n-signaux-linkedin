@@ -1,5 +1,5 @@
 {
-  "name": "Signaux LinkedIn Toronto (hiring)",
+  "name": "Signaux Toronto (LinkedIn + X)",
   "nodes": [
     {
       "parameters": {
@@ -7,17 +7,64 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0 7 * * *"
+              "expression": "15 7,16 * * *"
             }
           ]
         }
       },
-      "id": "a1",
-      "name": "Chaque jour 7h",
+      "id": "n1",
+      "name": "7h15 et 16h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
         0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// CONFIGURATION : comptes X à suivre (handle sans @). Ajoute-les ici.\nconst COMPTES_X = [\n  // 'compte1',\n  // 'compte2',\n];\n\n// Paquets de comptes par requête (X limite la longueur d'une recherche)\nconst PAR_REQUETE = 10;\n\nconst staticData = $getWorkflowStaticData('global');\nconst now = Date.now();\n\n// Passage du matin (LinkedIn + X) ou de l'après-midi (X seulement)\nconst heure = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Toronto', hour: 'numeric', hour12: false }));\nconst matin = heure < 12;\n\n// Fenêtre X : depuis le dernier passage réussi, 24 h max, + 15 min de marge (les doublons sont filtrés ensuite)\nconst dernier = staticData.lastXRun || 0;\nconst fenetre = Math.min(now - dernier, 24 * 36e5) + 15 * 6e4;\nconst sinceTime = Math.floor((now - fenetre) / 1000);\n\nconst comptes = [...new Set(COMPTES_X.map(c => String(c).trim().replace(/^@/, '').replace(/^https?:\\/\\/(www\\.)?(x|twitter)\\.com\\//i, '').split(/[/?]/)[0]).filter(Boolean))];\nconst xQueries = [];\nfor (let i = 0; i < comptes.length; i += PAR_REQUETE) {\n  const paquet = comptes.slice(i, i + PAR_REQUETE).map(c => `from:${c}`).join(' OR ');\n  xQueries.push(`(${paquet}) since_time:${sinceTime} -filter:replies -filter:retweets`);\n}\n\nreturn [{ json: { matin, xQueries, nbComptes: comptes.length, depuis: new Date(sinceTime * 1000).toISOString(), runAt: now } }];\n"
+      },
+      "id": "n2",
+      "name": "Préparer le passage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "n3c",
+              "leftValue": "={{ $json.matin }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n3",
+      "name": "Passage du matin ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
         0
       ]
     },
@@ -34,26 +81,146 @@
           "timeout": 300000
         }
       },
-      "id": "a2",
-      "name": "Apify : recherche de posts",
+      "id": "n4",
+      "name": "Apify LinkedIn",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        260,
+        660,
+        -120
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// LinkedIn : dédoublonne et score les posts (même logique que l'ancien workflow).\n// La mémoire des posts déjà vus ne persiste qu'en exécution automatique (workflow actif).\nconst staticData = $getWorkflowStaticData('global');\nstaticData.seen = staticData.seen || {};\nconst now = Date.now();\nfor (const [k, t] of Object.entries(staticData.seen)) {\n  if (now - t > 30 * 864e5) delete staticData.seen[k];\n}\n\nconst metier = /\\b(revops|revenue operations|sales ops|sales operations|marketing ops|marketing operations|gtm|go-to-market|hubspot|salesforce|crm)\\b/gi;\nconst decideur = /\\b(founder|co-founder|ceo|coo|cro|vp|head of|director|chief|owner)\\b/i;\nconst recruteur = /\\b(recruit\\w*|talent|sourc\\w*|staffing|headhunt\\w*)\\b/i;\nconst contact = /(dm me|send me a (dm|message)|reach out|comment below|drop a comment|email me)/i;\n\nconst items = $input.all().map(i => i.json || {});\nconst erreur = items.find(p => p.error) ? 'Erreur Apify LinkedIn : ' + String(items.find(p => p.error).error.message || items.find(p => p.error).error).slice(0, 200) : '';\n\nconst posts = [];\nfor (const p of items) {\n  const key = p.id || p.linkedinUrl;\n  if (!key || staticData.seen[key]) continue;\n  staticData.seen[key] = now;\n\n  const text = p.content || '';\n  const headline = (p.author && p.author.info) || '';\n  const hits = [...new Set((text.match(metier) || []).map(h => h.toLowerCase()))];\n  const tags = [];\n  let score = Math.min(hits.length, 3) * 20;\n  if (/\\b(toronto|gta|ontario)\\b/i.test(text)) score += 15;\n  if (/\\bremote\\b/i.test(text) && /\\bcanada\\b/i.test(text)) score += 10;\n  if (decideur.test(headline)) { score += 25; tags.push('Décideur'); }\n  if (recruteur.test(headline)) { score -= 10; tags.push('Recruteur'); }\n  if (contact.test(text)) { score += 10; tags.push('Contact direct'); }\n\n  posts.push({\n    score, tags, hits,\n    author: (p.author && p.author.name) || 'Inconnu',\n    headline,\n    authorUrl: (p.author && p.author.linkedinUrl) || '',\n    url: p.linkedinUrl || (p.socialContent && p.socialContent.shareUrl) || '',\n    when: (p.postedAt && p.postedAt.postedAgoText) || '',\n    excerpt: text.replace(/\\s+/g, ' ').slice(0, 300),\n  });\n}\nposts.sort((a, b) => b.score - a.score);\n\nreturn [{ json: { posts, erreur } }];\n"
+      },
+      "id": "n5",
+      "name": "LinkedIn : dédoublonner et scorer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "n6c",
+              "leftValue": "={{ $('Préparer le passage').first().json.nbComptes > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n6",
+      "name": "Comptes X configurés ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
         0
       ]
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "// Dédoublonne, score et construit le digest e-mail.\n// La mémoire des posts déjà vus ne persiste qu'en exécution automatique (workflow actif).\nconst staticData = $getWorkflowStaticData('global');\nstaticData.seen = staticData.seen || {};\nconst now = Date.now();\nfor (const [k, t] of Object.entries(staticData.seen)) {\n  if (now - t > 30 * 864e5) delete staticData.seen[k];\n}\n\nconst metier = /\\b(revops|revenue operations|sales ops|sales operations|marketing ops|marketing operations|gtm|go-to-market|hubspot|salesforce|crm)\\b/gi;\nconst decideur = /\\b(founder|co-founder|ceo|coo|cro|vp|head of|director|chief|owner)\\b/i;\nconst recruteur = /\\b(recruit\\w*|talent|sourc\\w*|staffing|headhunt\\w*)\\b/i;\nconst contact = /(dm me|send me a (dm|message)|reach out|comment below|drop a comment|email me)/i;\nconst esc = s => String(s || '').replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\n\nconst posts = [];\nfor (const item of $input.all()) {\n  const p = item.json || {};\n  const key = p.id || p.linkedinUrl;\n  if (!key || staticData.seen[key]) continue;\n  staticData.seen[key] = now;\n\n  const text = p.content || '';\n  const headline = (p.author && p.author.info) || '';\n  const hits = [...new Set((text.match(metier) || []).map(h => h.toLowerCase()))];\n  const tags = [];\n  let score = Math.min(hits.length, 3) * 20;\n  if (/\\b(toronto|gta|ontario)\\b/i.test(text)) score += 15;\n  if (/\\bremote\\b/i.test(text) && /\\bcanada\\b/i.test(text)) score += 10;\n  if (decideur.test(headline)) { score += 25; tags.push('Décideur'); }\n  if (recruteur.test(headline)) { score -= 10; tags.push('Recruteur'); }\n  if (contact.test(text)) { score += 10; tags.push('Contact direct'); }\n\n  posts.push({\n    score, tags, hits,\n    author: (p.author && p.author.name) || 'Inconnu',\n    headline,\n    authorUrl: (p.author && p.author.linkedinUrl) || '',\n    postUrl: p.linkedinUrl || (p.socialContent && p.socialContent.shareUrl) || '',\n    postedAgo: (p.postedAt && p.postedAt.postedAgoText) || '',\n    excerpt: text.replace(/\\s+/g, ' ').slice(0, 300),\n  });\n}\nposts.sort((a, b) => b.score - a.score);\n\nconst date = new Date().toLocaleDateString('fr-CA', { timeZone: 'America/Toronto', weekday: 'long', day: 'numeric', month: 'long' });\nconst rows = posts.map(p => `\n  <div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0;\">\n    <div style=\"font-size:13px;color:#666;\">Score ${p.score}${p.tags.length ? ' · ' + esc(p.tags.join(' · ')) : ''}${p.postedAgo ? ' · ' + esc(p.postedAgo) : ''}</div>\n    <div style=\"font-weight:bold;margin:4px 0;\"><a href=\"${esc(p.authorUrl)}\">${esc(p.author)}</a></div>\n    <div style=\"font-size:13px;color:#444;\">${esc(p.headline)}</div>\n    <p style=\"font-size:14px;\">${esc(p.excerpt)}…</p>\n    <div style=\"font-size:12px;color:#888;\">Mots-clés : ${esc(p.hits.join(', ') || 'aucun')}</div>\n    <a href=\"${esc(p.postUrl)}\">Voir le post</a>\n  </div>`).join('');\n\nconst html = posts.length\n  ? `<h2>Signaux Toronto, ${esc(date)}</h2><p>${posts.length} nouveaux posts, triés par score.</p>${rows}`\n  : `<h2>Signaux Toronto, ${esc(date)}</h2><p>Aucun nouveau post aujourd'hui.</p>`;\n\nreturn [{ json: { count: posts.length, subject: `Signaux Toronto : ${posts.length} nouveaux posts`, html } }];\n"
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ searchTerms: $('Préparer le passage').first().json.xQueries, queryType: 'Latest', maxItems: 300 }) }}",
+        "options": {
+          "timeout": 300000
+        }
       },
-      "id": "a3",
-      "name": "Dédoublonner, scorer, digest",
+      "id": "n7",
+      "name": "Apify X",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -120
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// X : filtre, dédoublonne et score les tweets des comptes suivis.\nconst staticData = $getWorkflowStaticData('global');\nstaticData.seenX = staticData.seenX || {};\nstaticData.avgX = staticData.avgX || {};\nconst now = Date.now();\nfor (const [k, t] of Object.entries(staticData.seenX)) {\n  if (now - t > 30 * 864e5) delete staticData.seenX[k];\n}\n\nconst metier = /\\b(revops|revenue operations|sales ops|sales operations|marketing ops|gtm|go-to-market|hubspot|salesforce|clay|crm|outbound|pipeline|icp|abm|enrichment|signals?|cold email|sequenc\\w*|forecast\\w*|attribution)\\b/gi;\nconst recrutement = /(\\bhiring\\b|we're hiring|we are hiring|join (our|the) team|open role|looking for (a|an) |job opening|apply here)/i;\nconst ressource = /(🧵|\\bthread\\b|\\b1\\/\\d*\\b|\\btemplate|\\bplaybook|\\bframework|\\bguide\\b|\\bchecklist|\\bswipe file)/i;\n\nconst items = $input.all().map(i => i.json || {});\nconst errItem = items.find(t => t.error);\nconst erreur = errItem ? 'Erreur Apify X : ' + String((errItem.error && errItem.error.message) || errItem.error).slice(0, 200) : '';\n\nconst num = v => Number(v) || 0;\nconst tweets = [];\nfor (const t of items) {\n  const id = t.id || t.id_str || t.tweetId;\n  const text = t.text || t.fullText || t.full_text || '';\n  if (!id || !text) continue; // éléments vides ou messages \"aucun résultat\"\n  const a = t.author || t.user || {};\n  const user = a.userName || a.username || a.screen_name || '';\n  // Retweets et réponses à d'autres comptes exclus ; les threads (réponses à soi-même) restent\n  if (t.isRetweet || t.retweeted_tweet || t.retweetedTweet || /^RT @/.test(text)) continue;\n  const replyTo = t.inReplyToUsername || t.in_reply_to_screen_name || '';\n  if ((t.isReply || replyTo) && replyTo.toLowerCase() !== user.toLowerCase()) continue;\n\n  const key = String(id);\n  if (staticData.seenX[key]) continue;\n  staticData.seenX[key] = now;\n\n  const likes = num(t.likeCount ?? t.favorite_count), rts = num(t.retweetCount ?? t.retweet_count), reps = num(t.replyCount ?? t.reply_count);\n  const eng = likes + 2 * rts + reps;\n  const created = new Date(t.createdAt || t.created_at || now).getTime() || now;\n  const ageH = (now - created) / 36e5;\n\n  const hits = [...new Set((text.match(metier) || []).map(h => h.toLowerCase()))];\n  const tags = [];\n  let score = Math.min(hits.length, 3) * 20;\n\n  // Engagement comparé à la moyenne du compte (moyenne glissante mémorisée)\n  const ukey = user.toLowerCase();\n  const moy = staticData.avgX[ukey];\n  const ratio = moy ? eng / Math.max(moy, 1) : 1;\n  score += Math.min(30, Math.round(ratio * 15));\n  if (ratio >= 2) tags.push('Au-dessus de sa moyenne');\n  staticData.avgX[ukey] = moy ? moy * 0.8 + eng * 0.2 : eng;\n\n  if (ageH < 6) { score += 10; tags.push('Récent'); }\n  const aLien = /https?:\\/\\//.test(text) || (t.entities && t.entities.urls && t.entities.urls.length);\n  if (aLien || ressource.test(text)) { score += 10; tags.push('Ressource'); }\n  if (recrutement.test(text)) { score += 25; tags.push('Recrutement'); }\n\n  const h = Math.round(ageH);\n  tweets.push({\n    score, tags, hits,\n    author: a.name || user || 'Inconnu',\n    headline: user ? '@' + user + (a.followers ? ' · ' + num(a.followers).toLocaleString('fr-CA') + ' abonnés' : '') : '',\n    authorUrl: user ? 'https://x.com/' + user : '',\n    url: t.url || t.twitterUrl || (user ? `https://x.com/${user}/status/${key}` : ''),\n    when: (h < 1 ? \"il y a moins d'1 h\" : `il y a ${h} h`) + ` · ${likes} j'aime · ${rts} reposts · ${reps} réponses`,\n    excerpt: text.replace(/\\s+/g, ' ').slice(0, 300),\n  });\n}\ntweets.sort((a, b) => b.score - a.score);\n\n// Mémorise le passage réussi pour la fenêtre du prochain\nif (!erreur) staticData.lastXRun = $('Préparer le passage').first().json.runAt;\n\nreturn [{ json: { posts: tweets, erreur } }];\n"
+      },
+      "id": "n8",
+      "name": "X : filtrer et scorer",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        520,
+        1540,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Assemble un seul e-mail : section LinkedIn (matin) + section X.\nconst prep = $('Préparer le passage').first().json;\nconst lire = nom => { try { return $(nom).first().json; } catch (e) { return null; } };\nconst li = prep.matin ? lire('LinkedIn : dédoublonner et scorer') : null;\nconst x = prep.nbComptes ? lire('X : filtrer et scorer') : null;\n\nconst esc = s => String(s || '').replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst carte = (p, lien) => `\n  <div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0;\">\n    <div style=\"font-size:13px;color:#666;\">Score ${p.score}${p.tags.length ? ' · ' + esc(p.tags.join(' · ')) : ''}${p.when ? ' · ' + esc(p.when) : ''}</div>\n    <div style=\"font-weight:bold;margin:4px 0;\"><a href=\"${esc(p.authorUrl)}\">${esc(p.author)}</a></div>\n    <div style=\"font-size:13px;color:#444;\">${esc(p.headline)}</div>\n    <p style=\"font-size:14px;\">${esc(p.excerpt)}${p.excerpt.length >= 300 ? '…' : ''}</p>\n    <div style=\"font-size:12px;color:#888;\">Mots-clés : ${esc(p.hits.join(', ') || 'aucun')}</div>\n    <a href=\"${esc(p.url)}\">${lien}</a>\n  </div>`;\nconst section = (titre, data, vide, lien) => {\n  if (!data) return '';\n  const err = data.erreur ? `<p style=\"color:#b00;\">${esc(data.erreur)}</p>` : '';\n  const corps = data.posts.length ? `<p>${data.posts.length} nouveaux, triés par score.</p>` + data.posts.map(p => carte(p, lien)).join('') : `<p>${vide}</p>`;\n  return `<h3>${titre}</h3>${err}${corps}`;\n};\n\nconst nLi = li ? li.posts.length : 0;\nconst nX = x ? x.posts.length : 0;\nconst erreurs = [li && li.erreur, x && x.erreur].filter(Boolean).length;\n\nconst date = new Date().toLocaleDateString('fr-CA', { timeZone: 'America/Toronto', weekday: 'long', day: 'numeric', month: 'long' });\nconst titre = prep.matin ? `Signaux du jour, ${date}` : `Signaux X de l'après-midi, ${date}`;\nlet html = `<h2>${esc(titre)}</h2>`;\nhtml += section('💼 LinkedIn : recrutements Toronto', li, 'Rien de nouveau sur LinkedIn.', 'Voir le post');\nif (prep.nbComptes) html += section('🐦 X : comptes GTM suivis', x, 'Rien de nouveau sur X depuis le dernier passage.', 'Voir le tweet');\nelse html += '<h3>🐦 X</h3><p>Aucun compte configuré (nœud « Préparer le passage »).</p>';\n\nconst subject = prep.matin ? `Signaux du jour : ${nLi} LinkedIn, ${nX} X` : `Signaux X : ${nX} nouveaux tweets`;\n\n// Pas d'e-mail si rien de neuf et aucune erreur à signaler\nreturn [{ json: { envoyer: nLi + nX > 0 || erreurs > 0, subject, html } }];\n"
+      },
+      "id": "n9",
+      "name": "Assembler le digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "n10c",
+              "leftValue": "={{ $json.envoyer }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n10",
+      "name": "Quelque chose à envoyer ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1980,
         0
       ]
     },
@@ -66,40 +233,131 @@
         "html": "={{ $json.html }}",
         "options": {}
       },
-      "id": "a4",
+      "id": "n11",
       "name": "Envoyer le digest",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        780,
-        0
+        2200,
+        -20
       ]
     }
   ],
   "connections": {
-    "Chaque jour 7h": {
+    "7h15 et 16h": {
       "main": [
         [
           {
-            "node": "Apify : recherche de posts",
+            "node": "Préparer le passage",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Apify : recherche de posts": {
+    "Préparer le passage": {
       "main": [
         [
           {
-            "node": "Dédoublonner, scorer, digest",
+            "node": "Passage du matin ?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Dédoublonner, scorer, digest": {
+    "Passage du matin ?": {
+      "main": [
+        [
+          {
+            "node": "Apify LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Comptes X configurés ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn : dédoublonner et scorer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn : dédoublonner et scorer": {
+      "main": [
+        [
+          {
+            "node": "Comptes X configurés ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comptes X configurés ?": {
+      "main": [
+        [
+          {
+            "node": "Apify X",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Assembler le digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify X": {
+      "main": [
+        [
+          {
+            "node": "X : filtrer et scorer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X : filtrer et scorer": {
+      "main": [
+        [
+          {
+            "node": "Assembler le digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assembler le digest": {
+      "main": [
+        [
+          {
+            "node": "Quelque chose à envoyer ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quelque chose à envoyer ?": {
       "main": [
         [
           {
@@ -107,7 +365,8 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     }
   },

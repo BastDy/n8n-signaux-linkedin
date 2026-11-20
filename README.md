@@ -11,13 +11,33 @@ Les outils de « signal-based selling » qui captent ce type de signal coûtent 
 ## Ce que fait le workflow
 
 ```
-Cron 7 h (Toronto)
-  → Apify : recherche de posts LinkedIn, 5 requêtes booléennes, dernières 24 h
-  → Code : dédoublonnage (mémoire 30 jours) + scoring
-  → E-mail : digest HTML trié par score
+Cron 7 h 15 et 16 h (Toronto)
+  ├─ LinkedIn (passage de 7 h 15 seulement)
+  │    → Apify : 5 requêtes booléennes, dernières 24 h
+  │    → Code : dédoublonnage (mémoire 30 jours) + scoring
+  └─ X (aux deux passages)
+       → Apify : tweets des comptes GTM suivis depuis le dernier passage
+       → Code : retire retweets et réponses, dédoublonne, score
+  → Un seul e-mail HTML (LinkedIn + X le matin, X seul l'après-midi)
 ```
 
-Le scoring est volontairement simple et lisible :
+Pas d'e-mail si rien de neuf (sauf erreur Apify, signalée dans l'e-mail).
+
+### Comptes X suivis
+
+La liste est en haut du nœud « Préparer le passage » (`COMPTES_X`), en handles sans @ ou en URL de profil. Les comptes sont groupés par 10 dans des requêtes `from:a OR from:b … since_time:… -filter:replies -filter:retweets`.
+
+### Scoring X
+
+| Critère | Points |
+|---|---|
+| Mot-clé métier (RevOps, GTM, HubSpot, Clay, outbound, pipeline…), max 3 | +20 chacun |
+| Engagement comparé à la moyenne glissante du compte | jusqu'à +30 |
+| Tweet de moins de 6 h | +10 |
+| Lien, thread ou ressource (template, playbook…) | +10 |
+| Signal de recrutement (« hiring », « join our team »…) | +25 |
+
+Le scoring LinkedIn est volontairement simple et lisible :
 
 | Critère | Points |
 |---|---|
@@ -34,13 +54,14 @@ Le scoring est volontairement simple et lisible :
 |---|---|---|
 | n8n auto-hébergé (Docker) | Orchestration | 0 $ (serveur gratuit Oracle) à ~6 $ (VPS) |
 | Apify `harvestapi/linkedin-post-search` | Collecte des posts, sans cookie | ~5 $, en partie couvert par le crédit gratuit |
+| Apify `kaitoeasyapi/twitter-x-data-tweet-scraper-pay-per-result-cheapest` | Tweets des comptes suivis, sans compte X | ~0,25 $ / 1 000 tweets, soit 1 à 2 $ |
 | SMTP Gmail | Envoi du digest | 0 $ |
 
-Total : **0 à ~10 $ par mois** pour environ 100 posts analysés par jour.
+Total : **0 à ~12 $ par mois** pour environ 100 posts LinkedIn et 100 tweets analysés par jour.
 
 ## Contenu du repo
 
-- `workflow-signaux-toronto.json` : le workflow n8n, à importer tel quel.
+- `workflow-signaux-toronto.json` : le workflow n8n (LinkedIn + X), à importer tel quel. Après import : choisir la credential Apify (Header Auth `Authorization: Bearer <token>`) dans les deux nœuds Apify, la credential SMTP dans « Envoyer le digest », remplacer `TON_EMAIL`, renseigner `COMPTES_X`, puis activer.
 - `docker-compose.yml` : n8n avec fuseau Toronto, port exposé uniquement en local, Cloudflare Tunnel en option.
 - `.env.example` : variables d'environnement.
 
@@ -54,4 +75,4 @@ Total : **0 à ~10 $ par mois** pour environ 100 posts analysés par jour.
 
 - Scoring plus fin avec Claude Haiku (type de signal, persona, angle d'approche).
 - Création automatique de contacts et de tâches dans HubSpot Free pour les scores élevés.
-- Ajout de X (via twitterapi.io) et de flux RSS de levées de fonds canadiennes.
+- Ajout de flux RSS de levées de fonds canadiennes.
