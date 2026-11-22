@@ -1,7 +1,6 @@
 {
   "id": "QAsHM1zylwZEXZI0",
   "name": "Signaux LinkedIn Toronto (hiring)",
-  "active": false,
   "nodes": [
     {
       "parameters": {
@@ -37,7 +36,7 @@
       "typeVersion": 2,
       "position": [
         240,
-        -100
+        0
       ]
     },
     {
@@ -49,8 +48,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        720,
-        50
+        480,
+        0
       ]
     },
     {
@@ -70,7 +69,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-haiku-5-5',\n  max_tokens: 2048,\n  output_config: {\n    effort: 'low',\n    format: {\n      type: 'json_schema',\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['est_recrutement', 'type_signal', 'poste', 'entreprise', 'localisation', 'persona_auteur', 'score', 'raison', 'angle_approche'],\n        properties: {\n          est_recrutement: { type: 'boolean' },\n          type_signal: { type: 'string', enum: ['offre_emploi_directe', 'recherche_freelance', 'besoin_implicite', 'recruteur_agence', 'autre'] },\n          poste: { type: 'string' },\n          entreprise: { type: 'string' },\n          localisation: { type: 'string' },\n          persona_auteur: { type: 'string', enum: ['decideur', 'manager', 'recruteur', 'pair', 'autre'] },\n          score: { type: 'integer' },\n          raison: { type: 'string' },\n          angle_approche: { type: 'string' }\n        }\n      }\n    }\n  },\n  system: `Tu qualifies des posts LinkedIn et des tweets X pour un professionnel RevOps basé à Toronto.\n\nSon profil : Revenue Operations / Sales Ops, expert HubSpot (et CRM en général), automatisation GTM (n8n, Clay, enrichissement). Il cherche un poste RevOps, Sales Ops, Marketing Ops, CRM ou GTM à Toronto/GTA ou en remote au Canada, et accepte aussi des missions freelance.\n\nPour chaque post, détermine :\n- est_recrutement : true seulement si le post annonce un vrai besoin d'embauche ou de prestataire (pas un conseil de carrière, une annonce d'avoir été embauché, un webinaire, une liste d'astuces).\n- type_signal : offre_emploi_directe, recherche_freelance, besoin_implicite, recruteur_agence ou autre.\n- poste, entreprise, localisation : tels que mentionnés, sinon chaîne vide.\n- persona_auteur : decideur (fondateur, C-level, VP, Head of, Director), manager, recruteur, pair ou autre.\n- score de 0 à 100 : adéquation avec le profil. 80-100 = poste ou mission RevOps/HubSpot à Toronto ou remote Canada publié par un décideur ; 60-79 = bonne adéquation avec un défaut ; 30-59 = lien faible ; 0-29 = hors sujet.\n- raison : une phrase en français qui justifie le score.\n- angle_approche : une phrase en français qui propose un commentaire ou un premier message concret et spécifique au post.`,\n  messages: [\n    { role: 'user', content: 'Source : ' + $json.source + '\\nAuteur : ' + $json.author + '\\nTitre : ' + $json.headline + '\\nPublié : ' + $json.postedAgo + '\\n\\nPost :\\n' + $json.text }\n  ]\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-haiku-5-5',\n  max_tokens: 2048,\n  output_config: {\n    effort: 'low',\n    format: {\n      type: 'json_schema',\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['est_recrutement', 'type_signal', 'poste', 'entreprise', 'localisation', 'persona_auteur', 'score', 'raison', 'angle_approche'],\n        properties: {\n          est_recrutement: { type: 'boolean' },\n          type_signal: { type: 'string', enum: ['offre_emploi_directe', 'recherche_freelance', 'besoin_implicite', 'recruteur_agence', 'autre'] },\n          poste: { type: 'string' },\n          entreprise: { type: 'string' },\n          localisation: { type: 'string' },\n          persona_auteur: { type: 'string', enum: ['decideur', 'manager', 'recruteur', 'pair', 'autre'] },\n          score: { type: 'integer' },\n          raison: { type: 'string' },\n          angle_approche: { type: 'string' }\n        }\n      }\n    }\n  },\n  system: `Tu qualifies des posts LinkedIn pour un professionnel RevOps basé à Toronto.\n\nSon profil : Revenue Operations / Sales Ops, expert HubSpot (et CRM en général), automatisation GTM (n8n, Clay, enrichissement). Il cherche un poste RevOps, Sales Ops, Marketing Ops, CRM ou GTM à Toronto/GTA ou en remote au Canada, et accepte aussi des missions freelance.\n\nPour chaque post, détermine :\n- est_recrutement : true seulement si le post annonce un vrai besoin d'embauche ou de prestataire (pas un conseil de carrière, une annonce d'avoir été embauché, un webinaire, une liste d'astuces).\n- type_signal : offre_emploi_directe, recherche_freelance, besoin_implicite, recruteur_agence ou autre.\n- poste, entreprise, localisation : tels que mentionnés, sinon chaîne vide.\n- persona_auteur : decideur (fondateur, C-level, VP, Head of, Director), manager, recruteur, pair ou autre.\n- score de 0 à 100 : adéquation avec le profil. 80-100 = poste ou mission RevOps/HubSpot à Toronto ou remote Canada publié par un décideur ; 60-79 = bonne adéquation avec un défaut ; 30-59 = lien faible ; 0-29 = hors sujet.\n- raison : une phrase en français qui justifie le score.\n- angle_approche : une phrase en français qui propose un commentaire ou un premier message concret et spécifique au post.`,\n  messages: [\n    { role: 'user', content: 'Auteur : ' + $json.author + '\\nTitre : ' + $json.headline + '\\nPublié : ' + $json.postedAgo + '\\n\\nPost :\\n' + $json.text }\n  ]\n}) }}",
         "options": {
           "batching": {
             "batch": {
@@ -85,8 +84,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        960,
-        50
+        720,
+        0
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -95,15 +94,15 @@
     },
     {
       "parameters": {
-        "jsCode": "// Associe chaque réponse de Claude à son post, filtre et construit le digest.\nconst SEUIL = 60;\nconst posts = $('Dédoublonner et préparer').all();\nconst reponses = $input.all();\nconst esc = s => String(s || '').replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst labels = { offre_emploi_directe: 'Offre directe', recherche_freelance: 'Mission freelance', besoin_implicite: 'Besoin implicite', recruteur_agence: 'Agence', autre: 'Autre' };\n\nconst qualifies = [], ecartes = [];\nlet erreurs = 0;\nreponses.forEach((r, i) => {\n  const post = (posts[i] && posts[i].json) || {};\n  const msg = r.json || {};\n  if (msg.error || msg.stop_reason === 'refusal') { erreurs++; return; }\n  const bloc = (msg.content || []).find(b => b.type === 'text');\n  let q;\n  try { q = JSON.parse(bloc.text); } catch (e) { erreurs++; return; }\n  const ligne = { ...post, ...q };\n  (q.est_recrutement && q.score >= SEUIL ? qualifies : ecartes).push(ligne);\n});\nqualifies.sort((a, b) => b.score - a.score);\n\nconst date = new Date().toLocaleDateString('fr-CA', { timeZone: 'America/Toronto', weekday: 'long', day: 'numeric', month: 'long' });\nconst carte = p => `\n  <div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0;\">\n    <div style=\"font-size:13px;color:#666;\">Score <b>${p.score}</b> · ${esc(labels[p.type_signal] || p.type_signal)} · ${esc(p.persona_auteur)} · ${esc(p.source)}${p.postedAgo ? ' · ' + esc(p.postedAgo) : ''}</div>\n    <div style=\"font-weight:bold;margin:4px 0;\">${esc(p.poste || 'Poste non précisé')}${p.entreprise ? ' · ' + esc(p.entreprise) : ''}${p.localisation ? ' · ' + esc(p.localisation) : ''}</div>\n    <div style=\"font-size:13px;\"><a href=\"${esc(p.authorUrl)}\">${esc(p.author)}</a> · ${esc(p.headline)}</div>\n    <p style=\"font-size:14px;margin:8px 0;\"><b>Pourquoi :</b> ${esc(p.raison)}</p>\n    <p style=\"font-size:14px;margin:8px 0;background:#f4f8ff;padding:8px;border-radius:6px;\"><b>Angle :</b> ${esc(p.angle_approche)}</p>\n    <p style=\"font-size:13px;color:#444;\">${esc(p.text.slice(0, 280))}…</p>\n    <a href=\"${esc(p.postUrl)}\">Voir le post</a>\n  </div>`;\n\nconst resume = `${reponses.length} nouveaux posts analysés par Claude · ${qualifies.length} retenus (score ≥ ${SEUIL})${erreurs ? ` · ${erreurs} en erreur` : ''}`;\nconst html = `<h2>Signaux Toronto, ${esc(date)}</h2><p>${resume}</p>` +\n  (qualifies.length ? qualifies.map(carte).join('') : '<p>Aucun signal assez pertinent aujourd\\'hui.</p>');\n\nreturn [{ json: { count: qualifies.length, subject: `Signaux Toronto : ${qualifies.length} signaux qualifiés`, html } }];\n"
+        "jsCode": "// Associe chaque réponse de Claude à son post, filtre et construit le digest.\nconst SEUIL = 60;\nconst posts = $('Dédoublonner et préparer').all();\nconst reponses = $input.all();\nconst esc = s => String(s || '').replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst labels = { offre_emploi_directe: 'Offre directe', recherche_freelance: 'Mission freelance', besoin_implicite: 'Besoin implicite', recruteur_agence: 'Agence', autre: 'Autre' };\n\nconst qualifies = [], ecartes = [];\nlet erreurs = 0;\nreponses.forEach((r, i) => {\n  const post = (posts[i] && posts[i].json) || {};\n  const msg = r.json || {};\n  if (msg.error || msg.stop_reason === 'refusal') { erreurs++; return; }\n  const bloc = (msg.content || []).find(b => b.type === 'text');\n  let q;\n  try { q = JSON.parse(bloc.text); } catch (e) { erreurs++; return; }\n  const ligne = { ...post, ...q };\n  (q.est_recrutement && q.score >= SEUIL ? qualifies : ecartes).push(ligne);\n});\nqualifies.sort((a, b) => b.score - a.score);\n\nconst date = new Date().toLocaleDateString('fr-CA', { timeZone: 'America/Toronto', weekday: 'long', day: 'numeric', month: 'long' });\nconst carte = p => `\n  <div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0;\">\n    <div style=\"font-size:13px;color:#666;\">Score <b>${p.score}</b> · ${esc(labels[p.type_signal] || p.type_signal)} · ${esc(p.persona_auteur)}${p.postedAgo ? ' · ' + esc(p.postedAgo) : ''}</div>\n    <div style=\"font-weight:bold;margin:4px 0;\">${esc(p.poste || 'Poste non précisé')}${p.entreprise ? ' · ' + esc(p.entreprise) : ''}${p.localisation ? ' · ' + esc(p.localisation) : ''}</div>\n    <div style=\"font-size:13px;\"><a href=\"${esc(p.authorUrl)}\">${esc(p.author)}</a> · ${esc(p.headline)}</div>\n    <p style=\"font-size:14px;margin:8px 0;\"><b>Pourquoi :</b> ${esc(p.raison)}</p>\n    <p style=\"font-size:14px;margin:8px 0;background:#f4f8ff;padding:8px;border-radius:6px;\"><b>Angle :</b> ${esc(p.angle_approche)}</p>\n    <p style=\"font-size:13px;color:#444;\">${esc(p.text.slice(0, 280))}…</p>\n    <a href=\"${esc(p.postUrl)}\">Voir le post</a>\n  </div>`;\n\nconst resume = `${reponses.length} nouveaux posts analysés par Claude · ${qualifies.length} retenus (score ≥ ${SEUIL})${erreurs ? ` · ${erreurs} en erreur` : ''}`;\nconst html = `<h2>Signaux Toronto, ${esc(date)}</h2><p>${resume}</p>` +\n  (qualifies.length ? qualifies.map(carte).join('') : '<p>Aucun signal assez pertinent aujourd\\'hui.</p>');\n\nreturn [{ json: { count: qualifies.length, subject: `Signaux Toronto : ${qualifies.length} signaux qualifiés`, html } }];\n"
       },
       "id": "a5",
       "name": "Construire le digest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        50
+        960,
+        0
       ]
     },
     {
@@ -119,38 +118,10 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        1440,
-        50
+        1200,
+        0
       ],
       "webhookId": "ec7f67d2-0450-4d44-af49-fcaf438fe8ab"
-    },
-    {
-      "parameters": {
-        "operation": "Run actor and get dataset",
-        "actorId": "apidojo~tweet-scraper",
-        "customBody": "{\n  \"searchTerms\": [\n    \"(hiring OR \\\"we're hiring\\\") (RevOps OR \\\"Revenue Operations\\\" OR \\\"Sales Ops\\\" OR \\\"Sales Operations\\\") (Toronto OR Canada) -filter:replies lang:en\",\n    \"(hiring OR \\\"looking for\\\") (\\\"HubSpot admin\\\" OR \\\"HubSpot consultant\\\" OR \\\"Salesforce admin\\\" OR \\\"CRM manager\\\") (Toronto OR Canada OR remote) -filter:replies lang:en\",\n    \"(\\\"looking for a RevOps\\\" OR \\\"need a RevOps\\\" OR \\\"hiring a RevOps\\\" OR \\\"first RevOps hire\\\") -filter:replies lang:en\"\n  ],\n  \"sort\": \"Latest\",\n  \"maxItems\": 60\n}",
-        "timeout": 600,
-        "maxTotalChargeUsd": 1
-      },
-      "id": "ax1",
-      "name": "Apify : tweets X",
-      "type": "@apify/n8n-nodes-apify.apify",
-      "typeVersion": 2,
-      "position": [
-        240,
-        200
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "am1",
-      "name": "Fusionner LinkedIn + X",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        480,
-        50
-      ]
     }
   ],
   "connections": {
@@ -161,38 +132,11 @@
             "node": "Apify : posts LinkedIn",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Apify : tweets X",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
     },
     "Apify : posts LinkedIn": {
-      "main": [
-        [
-          {
-            "node": "Fusionner LinkedIn + X",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Apify : tweets X": {
-      "main": [
-        [
-          {
-            "node": "Fusionner LinkedIn + X",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Fusionner LinkedIn + X": {
       "main": [
         [
           {
@@ -242,11 +186,6 @@
     "timezone": "America/Toronto",
     "binaryMode": "separate"
   },
-  "nodeGroups": [],
-  "sourceWorkflowId": null,
-  "versionMetadata": {
-    "name": "1 : Signaux linkedin",
-    "description": ""
-  },
+  "active": false,
   "pinData": {}
 }

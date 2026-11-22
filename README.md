@@ -1,6 +1,9 @@
-# Signaux LinkedIn + X Toronto
+# Signaux LinkedIn Toronto
 
-Un pipeline de veille qui repère chaque matin les posts LinkedIn et les tweets X où quelqu'un recrute en RevOps, Sales Ops ou CRM à Toronto (ou en remote au Canada), les fait qualifier par Claude et les envoie dans un e-mail récapitulatif.
+Deux pipelines de veille qui lisent chaque matin les posts LinkedIn, les font qualifier par Claude et envoient un e-mail récapitulatif :
+
+- **Emploi** (`workflow-signaux-toronto.json`, 7 h) : quelqu'un recrute en RevOps, Sales Ops ou CRM à Toronto ou en remote au Canada.
+- **Missions freelance** (`workflow-missions-freelance.json`, 7 h 30) : quelqu'un cherche un consultant HubSpot/RevOps, demande une recommandation ou décrit un problème CRM qu'un freelance peut résoudre.
 
 ## Pourquoi
 
@@ -12,9 +15,8 @@ Les outils de « signal-based selling » qui captent ce type de signal coûtent 
 
 ```
 Cron 7 h (Toronto)
-  ├→ Apify : posts LinkedIn (5 requêtes booléennes, dernières 24 h)
-  └→ Apify : tweets X (3 recherches avancées, les plus récents)
-  → Fusion + dédoublonnage (mémoire 30 jours), format commun
+  → Apify : posts LinkedIn (5 requêtes booléennes, dernières 24 h)
+  → Dédoublonnage (mémoire 30 jours)
   → Claude Haiku : qualification de chaque post (JSON structuré)
   → E-mail : digest HTML des signaux qualifiés, triés par score
 ```
@@ -33,27 +35,29 @@ Claude renvoie pour chaque post un JSON garanti par schéma :
 
 Seuls les vrais recrutements avec un score ≥ 60 arrivent dans le digest.
 
+Le workflow **missions freelance** suit le même schéma avec ses propres requêtes (« looking for a HubSpot consultant », « fractional RevOps », « Salesforce to HubSpot »…) et son propre schéma : `est_mission`, `type_signal` (demande explicite, recommandation demandée, besoin implicite…), `besoin`, `urgence`, `score`, `raison`, `angle_approche`.
+
 ## Stack et coût
 
 | Brique | Rôle | Coût mensuel |
 |---|---|---|
 | n8n auto-hébergé (Docker) | Orchestration | 0 $ (serveur gratuit Oracle) à ~6 $ (VPS) |
 | Apify `harvestapi/linkedin-post-search` | Posts LinkedIn, sans cookie | ~5 $, en partie couvert par le crédit gratuit |
-| Apify `apidojo/tweet-scraper` | Tweets X, sans compte | < 1 $ |
 | Claude Haiku 5.5 (API Anthropic) | Qualification des posts | quelques centimes |
 | SMTP Gmail | Envoi du digest | 0 $ |
 
-Total : **0 à ~10 $ par mois** pour environ 150 posts analysés par jour.
+Total : **0 à ~10 $ par mois** pour environ 200 posts analysés par jour (les deux workflows).
 
 ## Contenu du repo
 
-- `workflow-signaux-toronto.json` : le workflow n8n, à importer tel quel.
+- `workflow-signaux-toronto.json` : le workflow emploi, à importer tel quel.
+- `workflow-missions-freelance.json` : le workflow missions freelance.
 - `docker-compose.yml` : n8n avec fuseau Toronto, port exposé uniquement en local, Cloudflare Tunnel en option.
 - `.env.example` : variables d'environnement.
 
 ## Limites et conformité
 
-- Le scraping est contraire aux conditions d'utilisation de LinkedIn et de X. Le pipeline reste en lecture seule, à petit volume, et n'utilise **aucun cookie ni compte LinkedIn ou X personnel**. Aucune action (like, commentaire, message) n'est automatisée : l'engagement reste manuel.
+- Le scraping est contraire aux conditions d'utilisation de LinkedIn. Le pipeline reste en lecture seule, à petit volume, et n'utilise **aucun cookie ni compte LinkedIn personnel**. Aucune action (like, commentaire, message) n'est automatisée : l'engagement reste manuel.
 - Les données collectées sont des renseignements personnels (LPRPDE au Canada, RGPD en Europe) : garder le minimum, purger régulièrement.
 - Les actors Apify sont maintenus par des tiers et peuvent casser quand LinkedIn change son site.
 

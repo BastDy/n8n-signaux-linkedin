@@ -1,0 +1,191 @@
+{
+  "id": "FrLnc7mK2pQ9xR4s",
+  "name": "Missions freelance RevOps / HubSpot",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "f1",
+      "name": "Chaque jour 7h30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "Run actor and get dataset",
+        "actorId": "harvestapi~linkedin-post-search",
+        "customBody": "{\n  \"searchQueries\": [\n    \"\\\"looking for a HubSpot consultant\\\" OR \\\"need a HubSpot consultant\\\" OR \\\"HubSpot freelancer\\\"\",\n    \"\\\"looking for a RevOps\\\" OR \\\"need a RevOps\\\" OR \\\"fractional RevOps\\\" OR \\\"RevOps consultant\\\"\",\n    \"(\\\"HubSpot migration\\\" OR \\\"Salesforce to HubSpot\\\" OR \\\"CRM migration\\\") NOT hiring\",\n    \"\\\"recommend a HubSpot\\\" OR \\\"anyone know a HubSpot\\\" OR \\\"HubSpot partner recommendation\\\"\",\n    \"\\\"looking for a freelancer\\\" AND (HubSpot OR CRM OR RevOps)\"\n  ],\n  \"postedLimit\": \"24h\",\n  \"sortBy\": \"date\",\n  \"maxPosts\": 20,\n  \"scrapeReactions\": false,\n  \"scrapeComments\": false\n}",
+        "timeout": 600,
+        "maxTotalChargeUsd": 1
+      },
+      "id": "f2",
+      "name": "Apify : posts LinkedIn",
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dédoublonne (mémoire 30 jours, en exécution automatique seulement)\n// et met les posts LinkedIn et les tweets X au même format pour Claude.\nconst staticData = $getWorkflowStaticData('global');\nstaticData.seen = staticData.seen || {};\nconst now = Date.now();\nfor (const [k, t] of Object.entries(staticData.seen)) {\n  if (now - t > 30 * 864e5) delete staticData.seen[k];\n}\n\nfunction normaliser(p) {\n  // Tweet X : champs text/fullText et author.userName\n  const a = p.author || {};\n  if (a.userName || p.fullText || p.twitterUrl || (p.url && /x\\.com|twitter\\.com/.test(p.url))) {\n    return {\n      source: 'X',\n      key: 'x:' + (p.id || p.url),\n      author: a.name || a.userName || 'Inconnu',\n      headline: a.description || '',\n      authorUrl: a.url || (a.userName ? 'https://x.com/' + a.userName : ''),\n      postUrl: p.url || p.twitterUrl || '',\n      postedAgo: p.createdAt || '',\n      text: p.fullText || p.text || '',\n    };\n  }\n  // Post LinkedIn (harvestapi)\n  return {\n    source: 'LinkedIn',\n    key: p.id || p.linkedinUrl,\n    author: a.name || 'Inconnu',\n    headline: a.info || '',\n    authorUrl: a.linkedinUrl || '',\n    postUrl: p.linkedinUrl || (p.socialContent && p.socialContent.shareUrl) || '',\n    postedAgo: (p.postedAt && p.postedAt.postedAgoText) || '',\n    text: p.content || '',\n  };\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  const n = normaliser(item.json || {});\n  if (!n.key || staticData.seen[n.key]) continue;\n  staticData.seen[n.key] = now;\n  n.text = n.text.replace(/\\s+/g, ' ').trim().slice(0, 3000);\n  if (!n.text) continue;\n  delete n.key;\n  out.push({ json: n });\n}\n// Aucun nouveau post : on s'arrête là (pas d'appel à Claude, pas d'e-mail).\nreturn out;\n"
+      },
+      "id": "f3",
+      "name": "Dédoublonner et préparer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2026-10-21"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-haiku-5-5',\n  max_tokens: 2048,\n  output_config: {\n    effort: 'low',\n    format: {\n      type: 'json_schema',\n      schema: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['est_mission', 'type_signal', 'besoin', 'entreprise', 'localisation', 'persona_auteur', 'urgence', 'score', 'raison', 'angle_approche'],\n        properties: {\n          est_mission: { type: 'boolean' },\n          type_signal: { type: 'string', enum: ['demande_explicite', 'recommandation_demandee', 'besoin_implicite', 'offre_emploi', 'autre'] },\n          besoin: { type: 'string' },\n          entreprise: { type: 'string' },\n          localisation: { type: 'string' },\n          persona_auteur: { type: 'string', enum: ['decideur', 'manager', 'recruteur', 'pair', 'autre'] },\n          urgence: { type: 'string', enum: ['haute', 'moyenne', 'basse'] },\n          score: { type: 'integer' },\n          raison: { type: 'string' },\n          angle_approche: { type: 'string' }\n        }\n      }\n    }\n  },\n  system: `Tu repères des opportunités de missions freelance dans des posts LinkedIn pour un consultant.\n\nSon offre : consultant freelance RevOps / HubSpot. Migration vers HubSpot (notamment depuis Salesforce), nettoyage et structuration du CRM, automatisation (workflows HubSpot, n8n, Clay, enrichissement), reporting et pipeline. Bilingue français-anglais, basé à Toronto, travaille à distance pour le Canada, les États-Unis et l'Europe francophone.\n\nPour chaque post, détermine :\n- est_mission : true seulement si l'auteur (ou son entreprise) cherche quelqu'un d'externe pour un travail que ce consultant peut faire, ou exprime un problème CRM/RevOps concret qu'un freelance pourrait résoudre. false pour un poste salarié classique, une offre de service d'un autre consultant, un contenu éducatif, une auto-promotion, un webinaire.\n- type_signal : demande_explicite (cherche un freelance ou consultant), recommandation_demandee (demande qui recommander), besoin_implicite (décrit une douleur sans demander d'aide), offre_emploi (poste salarié), autre.\n- besoin : le travail à faire, en quelques mots, en français (ex. migration Salesforce vers HubSpot). Chaîne vide si aucun.\n- entreprise, localisation : tels que mentionnés, sinon chaîne vide.\n- persona_auteur : decideur (fondateur, C-level, VP, Head of, Director), manager, recruteur, pair ou autre.\n- urgence : haute (besoin immédiat, date ou « ASAP »), moyenne, basse.\n- score de 0 à 100 : chance que ce post débouche sur une mission pour ce consultant. 80-100 = demande explicite d'un décideur sur un besoin HubSpot/RevOps ; 60-79 = bonne opportunité avec un défaut (besoin implicite, intermédiaire, périmètre flou) ; 30-59 = lien faible ; 0-29 = pas une opportunité.\n- raison : une phrase en français qui justifie le score.\n- angle_approche : une phrase en français qui propose un commentaire ou un premier message concret, utile et spécifique au post (pas de pitch générique).`,\n  messages: [\n    { role: 'user', content: 'Auteur : ' + $json.author + '\\nTitre : ' + $json.headline + '\\nPublié : ' + $json.postedAgo + '\\n\\nPost :\\n' + $json.text }\n  ]\n}) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "f4",
+      "name": "Claude : qualifier le post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Associe chaque réponse de Claude à son post, filtre et construit le digest missions.\nconst SEUIL = 60;\nconst posts = $('Dédoublonner et préparer').all();\nconst reponses = $input.all();\nconst esc = s => String(s || '').replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst labels = { demande_explicite: 'Demande explicite', recommandation_demandee: 'Recommandation demandée', besoin_implicite: 'Besoin implicite', offre_emploi: 'Poste salarié', autre: 'Autre' };\nconst urg = { haute: '🔴 urgent', moyenne: '🟠', basse: '' };\n\nconst retenus = [];\nlet erreurs = 0;\nreponses.forEach((r, i) => {\n  const post = (posts[i] && posts[i].json) || {};\n  const msg = r.json || {};\n  if (msg.error || msg.stop_reason === 'refusal') { erreurs++; return; }\n  const bloc = (msg.content || []).find(b => b.type === 'text');\n  let q;\n  try { q = JSON.parse(bloc.text); } catch (e) { erreurs++; return; }\n  if (q.est_mission && q.score >= SEUIL) retenus.push({ ...post, ...q });\n});\nretenus.sort((a, b) => b.score - a.score);\n\nconst date = new Date().toLocaleDateString('fr-CA', { timeZone: 'America/Toronto', weekday: 'long', day: 'numeric', month: 'long' });\nconst carte = p => `\n  <div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin:10px 0;\">\n    <div style=\"font-size:13px;color:#666;\">Score <b>${p.score}</b> · ${esc(labels[p.type_signal] || p.type_signal)} · ${esc(p.persona_auteur)}${urg[p.urgence] ? ' · ' + urg[p.urgence] : ''}${p.postedAgo ? ' · ' + esc(p.postedAgo) : ''}</div>\n    <div style=\"font-weight:bold;margin:4px 0;\">${esc(p.besoin || 'Besoin non précisé')}${p.entreprise ? ' · ' + esc(p.entreprise) : ''}${p.localisation ? ' · ' + esc(p.localisation) : ''}</div>\n    <div style=\"font-size:13px;\"><a href=\"${esc(p.authorUrl)}\">${esc(p.author)}</a> · ${esc(p.headline)}</div>\n    <p style=\"font-size:14px;margin:8px 0;\"><b>Pourquoi :</b> ${esc(p.raison)}</p>\n    <p style=\"font-size:14px;margin:8px 0;background:#f4fff4;padding:8px;border-radius:6px;\"><b>Angle :</b> ${esc(p.angle_approche)}</p>\n    <p style=\"font-size:13px;color:#444;\">${esc(p.text.slice(0, 280))}…</p>\n    <a href=\"${esc(p.postUrl)}\">Voir le post</a>\n  </div>`;\n\nconst resume = `${reponses.length} nouveaux posts analysés · ${retenus.length} opportunités retenues (score ≥ ${SEUIL})${erreurs ? ` · ${erreurs} en erreur` : ''}`;\nconst html = `<h2>Missions freelance, ${esc(date)}</h2><p>${resume}</p>` +\n  (retenus.length ? retenus.map(carte).join('') : '<p>Aucune opportunité assez pertinente aujourd\\'hui.</p>');\n\nreturn [{ json: { count: retenus.length, subject: `Missions freelance : ${retenus.length} opportunités`, html } }];\n"
+      },
+      "id": "f5",
+      "name": "Construire le digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "TON_EMAIL@gmail.com",
+        "toEmail": "TON_EMAIL@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "f6",
+      "name": "Envoyer le digest",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        0
+      ],
+      "webhookId": "ec7f67d2-0450-4d44-af49-fcaf438fe8ab"
+    }
+  ],
+  "connections": {
+    "Chaque jour 7h30": {
+      "main": [
+        [
+          {
+            "node": "Apify : posts LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify : posts LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Dédoublonner et préparer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dédoublonner et préparer": {
+      "main": [
+        [
+          {
+            "node": "Claude : qualifier le post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude : qualifier le post": {
+      "main": [
+        [
+          {
+            "node": "Construire le digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construire le digest": {
+      "main": [
+        [
+          {
+            "node": "Envoyer le digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Toronto",
+    "binaryMode": "separate"
+  },
+  "active": false,
+  "pinData": {}
+}
